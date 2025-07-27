@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { Project } from '@/types';
-import Image from 'next/image';
 
 export default function EditProjectPage() {
   const router = useRouter();

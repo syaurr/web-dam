@@ -43,33 +43,33 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     init();
 
-    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession ?? null);
-      // lakukan pengecekan role pada session baru
-      if (newSession?.user) {
-        supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', newSession.user.id)
-          .single()
-          .then(({ data: prof2, error: profError2 }) => {
-            if (profError2 || prof2?.role !== 'admin') {
-              supabase.auth.signOut();
-              router.push('/admin/login');
-            } else {
-              setProfile(prof2);
-            }
-          });
-      } else {
-        setProfile(null);
-        router.push('/admin/login');
-      }
-    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+        setSession(newSession ?? null);
 
-    return () => {
-      data.subscription.unsubscribe();
-    };
-  }, [router]);
+        if (newSession?.user) {
+          supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', newSession.user.id)
+            .single()
+            .then(({ data: prof2, error: profError2 }) => {
+              if (profError2 || prof2?.role !== 'admin') {
+                supabase.auth.signOut();
+                router.push('/admin/login');
+              } else {
+                setProfile(prof2);
+              }
+            });
+        } else {
+          setProfile(null);
+          router.push('/admin/login');
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }, [router]);
 
   if (loading) {
     return (
