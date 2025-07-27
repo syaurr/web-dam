@@ -1,72 +1,76 @@
-// src/app/admin/layout.tsx
 'use client';
+
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import Link from 'next/link'; // Import Link
-import { AuthError } from '@supabase/supabase-js'; // Import AuthError for error handling
+import type { Session } from '@supabase/supabase-js';
+
+type AdminProfile = {
+  role: string;
+};
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<any>(null); // State untuk menyimpan user
+  const [session, setSession] = useState<Session | null>(null);
+  const [profile, setProfile] = useState<AdminProfile | null>(null);
 
   useEffect(() => {
-    const checkUserAndRedirect = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      if (error || !session) {
-        router.push('/admin/login');
-      } else {
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
+    const init = async () => {
+      const { data: { session: sess }, error } = await supabase.auth.getSession();
+      if (error || !sess) return router.push('/admin/login');
 
-        if (profileError || profileData?.role !== 'admin') {
-          console.error("User is not an admin or profile not found:", profileError);
-          await supabase.auth.signOut();
-          router.push('/admin/login');
-        } else {
-          setUser(session.user); // Set user jika admin
-        }
+      setSession(sess);
+
+      const { data: prof, error: profError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', sess.user.id)
+        .single();
+
+      if (profError || prof?.role !== 'admin') {
+        console.error('Profile not found or not admin', profError);
+        await supabase.auth.signOut();
+        return router.push('/admin/login');
       }
+
+      setProfile(prof);
       setLoading(false);
     };
 
-    checkUserAndRedirect();
+    init();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        router.push('/admin/login');
-      } else {
+    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession ?? null);
+      // lakukan pengecekan role pada session baru
+      if (newSession?.user) {
         supabase
           .from('profiles')
           .select('role')
-          .eq('id', session.user.id)
+          .eq('id', newSession.user.id)
           .single()
-          .then(({ data: profileData, error: profileError }) => {
-            if (profileError || profileData?.role !== 'admin') {
-              console.error("User role check failed on state change:", profileError);
+          .then(({ data: prof2, error: profError2 }) => {
+            if (profError2 || prof2?.role !== 'admin') {
               supabase.auth.signOut();
               router.push('/admin/login');
             } else {
-              setUser(session.user);
+              setProfile(prof2);
             }
           });
+      } else {
+        setProfile(null);
+        router.push('/admin/login');
       }
     });
 
     return () => {
-      if (subscription) {
-        subscription.unsubscribe();
-      }
+      data.subscription.unsubscribe();
     };
   }, [router]);
 
-  // Ini penting! Kalau loading true, tampilkan loading.
-  // Kalau loading false DAN user tidak ada (misal redirecting), jangan tampilkan apa-apa sementara.
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
@@ -75,33 +79,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  // Ini juga penting! Jika user belum terautentikasi atau bukan admin
-  // dan redirecting, kita tidak perlu me-render konten kosong.
-  // Layout akan menunggu sampai user valid atau redirect selesai.
-  if (!user && pathname !== '/admin/login') { // Tambahkan kondisi agar form login tetap terlihat
+  if (!session || !profile) {
     return null;
   }
 
-  // Render login form jika di halaman login, tanpa sidebar
   if (pathname === '/admin/login') {
-    return children; // Hanya render children (login page)
+    return <>{children}</>;
   }
 
   const handleLogout = async () => {
-    try {
-      const { error }: { error: AuthError | null } = await supabase.auth.signOut();
-      if (error) {
-        console.error('Error during logout:', error.message);
-      } else {
-        router.push('/admin/login');
-      }
-    } catch (err) {
-      console.error('Unexpected error during logout:', err);
-    }
+    const { error } = await supabase.auth.signOut();
+    if (error) console.error('Logout error:', error.message);
+    router.push('/admin/login');
   };
 
-  // Render dashboard dengan sidebar jika sudah login sebagai admin
-  // Render dashboard dengan sidebar jika sudah login sebagai admin
   return (
     <div className="flex min-h-screen bg-gray-100">
       <aside className="w-64 bg-gray-800 text-white flex flex-col p-6">
@@ -121,18 +112,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </ul>
         </nav>
         <div className="mt-auto">
-          {user && <p className="text-sm text-gray-400 mb-4">Logged in as: {user.email}</p>}
-          <button
-            onClick={handleLogout}
-            className="w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors"
-          >
+          <p className="text-sm text-gray-400 mb-4">Logged in as: {session.user.email}</p>
+          <button onClick={handleLogout} className="w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg transition-colors">
             Logout
           </button>
         </div>
       </aside>
-      <main className="flex-1 p-8">
-        {children}
-      </main>
+      <main className="flex-1 p-8">{children}</main>
     </div>
   );
 }
